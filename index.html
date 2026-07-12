@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LN Trace Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #15181e;
+    --panel-2: #1b1f27;
+    --border: #262b34;
+    --amber: #f2a93b;
+    --amber-dim: #a8792f;
+    --text: #e7e9ee;
+    --text-dim: #8b93a1;
+    --text-faint: #565d6b;
+    --green: #4ade80;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .topbar {
+    height: 44px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .topbar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .topbar .title { font-family: var(--mono); font-weight: 600; font-size: 13.5px; }
+  .topbar .sub { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  .topbar .spacer { flex: 1; }
+  .topbar a.logout { font-size: 12px; color: var(--amber-dim); text-decoration: none; }
+  .topbar select {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: 5px 8px; font-family: var(--mono); font-size: 11.5px;
+  }
+
+  .layout { flex: 1; display: grid; grid-template-columns: 230px 1fr 380px; min-height: 0; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 180px 1fr 320px; } }
+
+  /* LEFT: file list */
+  .pane-left {
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .pane-header {
+    font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-faint); padding: 12px 14px 8px;
+  }
+  .dropzone-mini {
+    margin: 0 12px 12px; border: 1.5px dashed var(--border); border-radius: 7px;
+    padding: 14px 10px; text-align: center; cursor: pointer; position: relative;
+    font-size: 12px; color: var(--text-dim);
+  }
+  .dropzone-mini:hover { border-color: var(--amber-dim); }
+  .dropzone-mini input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .file-list { overflow-y: auto; flex: 1; }
+  .file-row {
+    padding: 9px 14px; cursor: pointer; border-left: 2px solid transparent;
+    font-size: 12.5px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .file-row:hover { background: var(--panel-2); }
+  .file-row.active { background: var(--panel-2); border-left-color: var(--amber); }
+  .file-row .fname { font-family: var(--mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-row .flines { color: var(--text-faint); font-size: 11px; }
+
+  /* MIDDLE: trace viewer */
+  .pane-middle { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+  .viewer-toolbar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .viewer-toolbar .vfname { font-family: var(--mono); font-size: 12px; color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .viewer-toolbar input {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 5px; padding: 5px 8px; font-family: var(--mono); font-size: 11.5px; width: 130px;
+  }
+  .viewer-toolbar button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 5px; padding: 5px 9px; font-family: var(--mono); font-size: 11px; cursor: pointer;
+  }
+  .viewer-toolbar button:hover { color: var(--text); border-color: var(--amber-dim); }
+
+  .code-scroll { flex: 1; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
+  .code-line { display: flex; padding: 1px 0; white-space: pre; }
+  .code-line .ln { width: 60px; flex: 0 0 auto; text-align: right; padding-right: 14px; color: var(--text-faint); user-select: none; }
+  .code-line .txt { color: #c7d0dc; overflow-x: visible; }
+  .code-line.hl { background: rgba(242,169,59,0.12); }
+  .code-line.hl .ln { color: var(--amber); }
+  .load-more-row { text-align: center; padding: 10px; }
+  .load-more-row button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 5px; padding: 6px 14px; font-family: var(--mono); font-size: 11px; cursor: pointer;
+  }
+  .viewer-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-faint); font-size: 13px; }
+
+  /* RIGHT: chat */
+  .pane-right { background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+  .chat-scroll { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 92%; font-size: 13.5px; line-height: 1.5; }
+  .msg.user { align-self: flex-end; background: var(--amber); color: #1a1206; padding: 9px 12px; border-radius: 10px 10px 2px 10px; }
+  .msg.assistant { align-self: flex-start; color: var(--text); }
+  .msg.assistant .who { font-family: var(--mono); font-size: 10.5px; color: var(--amber-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .msg.system-note { align-self: center; color: var(--text-faint); font-size: 11.5px; font-family: var(--mono); }
+  .msg .lines-ref { margin-top: 6px; }
+  .lines-ref button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--amber-dim);
+    border-radius: 5px; padding: 3px 8px; font-family: var(--mono); font-size: 10.5px; cursor: pointer; margin-right: 5px;
+  }
+  .typing { display: flex; gap: 4px; padding: 4px 0; }
+  .typing span { width: 5px; height: 5px; border-radius: 50%; background: var(--text-faint); animation: bounce 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: 0.15s; }
+  .typing span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-3px); opacity: 1; } }
+
+  .chat-input-row { border-top: 1px solid var(--border); padding: 10px; display: flex; gap: 8px; }
+  .chat-input-row textarea {
+    flex: 1; resize: none; background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 7px; padding: 9px 10px; font-family: var(--sans); font-size: 13px;
+    height: 40px;
+  }
+  .chat-input-row textarea:focus { outline: none; border-color: var(--amber-dim); }
+  .chat-input-row button {
+    background: var(--amber); border: none; color: #1a1206; border-radius: 7px;
+    padding: 0 16px; font-weight: 600; font-family: var(--mono); font-size: 13px; cursor: pointer;
+  }
+  .chat-input-row button:disabled { background: var(--border); color: var(--text-faint); cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="dot"></div>
+  <div class="title">LN Trace Chat</div>
+  <div class="sub">local &middot; via ollama</div>
+  <div class="spacer"></div>
+  <select id="modelSelect"><option value="llama3.2:3b">llama3.2:3b</option></select>
+  {% if show_logout %}<a class="logout" href="/logout">Log out</a>{% endif %}
+</div>
+
+<div class="layout">
+  <!-- LEFT: files -->
+  <div class="pane-left">
+    <div class="pane-header">Traces</div>
+    <div class="dropzone-mini" id="dropzone">
+      <input type="file" id="fileInput" accept=".gz,.log,.txt">
+      + Add trace file
+    </div>
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <!-- MIDDLE: viewer -->
+  <div class="pane-middle">
+    <div class="viewer-toolbar">
+      <div class="vfname" id="vfname">No file selected</div>
+      <input type="text" id="gotoLine" placeholder="go to line #">
+      <button id="gotoBtn">Go</button>
+    </div>
+    <div class="code-scroll" id="codeScroll">
+      <div class="viewer-empty">Upload a trace file to view it here</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: chat -->
+  <div class="pane-right">
+    <div class="chat-scroll" id="chatScroll">
+      <div class="msg system-note">Upload a trace, then ask a question about it.</div>
+    </div>
+    <div class="chat-input-row">
+      <textarea id="chatInput" placeholder="Ask a question about this trace..."></textarea>
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let traces = {};       // trace_id -> {filename, total_lines}
+let activeTraceId = null;
+let chatHistory = [];  // [{role, content}]
+let viewerStart = 0;
+const PAGE = 400;
+
+fetch('/api/models').then(r => r.json()).then(data => {
+  const sel = document.getElementById('modelSelect');
+  if (data.ok && data.models.length) {
+    sel.innerHTML = '';
+    data.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      if (m.includes('3b')) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+});
+
+const fileInput = document.getElementById('fileInput');
+const dropzone = document.getElementById('dropzone');
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) uploadFile(fileInput.files[0]); });
+['dragover','dragenter'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.style.borderColor = 'var(--amber-dim)'; }));
+['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.style.borderColor = 'var(--border)'; }));
+dropzone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+
+async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const row = addFileRowPlaceholder(file.name);
+  const r = await fetch('/api/upload', { method: 'POST', body: fd });
+  const data = await r.json();
+  row.remove();
+  if (!data.ok) { alert('Upload failed: ' + data.error); return; }
+  traces[data.trace_id] = { filename: data.filename, total_lines: data.total_lines };
+  addFileRow(data.trace_id);
+  selectTrace(data.trace_id);
+}
+
+function addFileRowPlaceholder(name) {
+  const div = document.createElement('div');
+  div.className = 'file-row';
+  div.innerHTML = `<div class="fname">${name}</div><div class="flines">uploading...</div>`;
+  document.getElementById('fileList').appendChild(div);
+  return div;
+}
+
+function addFileRow(traceId) {
+  const t = traces[traceId];
+  const div = document.createElement('div');
+  div.className = 'file-row';
+  div.id = 'file-row-' + traceId;
+  div.innerHTML = `<div class="fname">${t.filename}</div><div class="flines">${t.total_lines.toLocaleString()} lines</div>`;
+  div.addEventListener('click', () => selectTrace(traceId));
+  document.getElementById('fileList').appendChild(div);
+}
+
+async function selectTrace(traceId) {
+  activeTraceId = traceId;
+  document.querySelectorAll('.file-row').forEach(el => el.classList.remove('active'));
+  const row = document.getElementById('file-row-' + traceId);
+  if (row) row.classList.add('active');
+  document.getElementById('vfname').textContent = traces[traceId].filename;
+  chatHistory = [];
+  document.getElementById('chatScroll').innerHTML = '<div class="msg system-note">Ask a question about ' + traces[traceId].filename + '</div>';
+  await loadViewer(traceId, 0);
+}
+
+async function loadViewer(traceId, start) {
+  const r = await fetch(`/api/trace/${traceId}/lines?start=${start}&count=${PAGE}`);
+  const data = await r.json();
+  if (!data.ok) return;
+  viewerStart = data.start;
+  const scroll = document.getElementById('codeScroll');
+  scroll.innerHTML = '';
+  if (data.start > 0) {
+    scroll.appendChild(makeLoadMore('Load earlier lines', () => loadViewer(traceId, Math.max(0, data.start - PAGE))));
+  }
+  data.lines.forEach(l => scroll.appendChild(makeCodeLine(l.n, l.text)));
+  if (data.end < data.total) {
+    scroll.appendChild(makeLoadMore('Load more lines', () => loadViewer(traceId, data.end)));
+  }
+}
+
+function makeLoadMore(label, onClick) {
+  const div = document.createElement('div');
+  div.className = 'load-more-row';
+  const btn = document.createElement('button');
+  btn.textContent = label;
+  btn.onclick = onClick;
+  div.appendChild(btn);
+  return div;
+}
+
+function makeCodeLine(n, text) {
+  const div = document.createElement('div');
+  div.className = 'code-line';
+  div.id = 'line-' + n;
+  div.innerHTML = `<div class="ln">${n}</div><div class="txt"></div>`;
+  div.querySelector('.txt').textContent = text;
+  return div;
+}
+
+document.getElementById('gotoBtn').addEventListener('click', () => {
+  const n = parseInt(document.getElementById('gotoLine').value, 10);
+  if (activeTraceId && !isNaN(n)) jumpToLine(n);
+});
+
+async function jumpToLine(n, highlightSet) {
+  if (!activeTraceId) return;
+  const start = Math.max(0, n - Math.floor(PAGE / 2));
+  await loadViewer(activeTraceId, start);
+  if (highlightSet) {
+    highlightSet.forEach(hn => {
+      const el = document.getElementById('line-' + hn);
+      if (el) el.classList.add('hl');
+    });
+  }
+  const target = document.getElementById('line-' + n);
+  if (target) target.scrollIntoView({ block: 'center' });
+}
+
+// --- chat ---
+const chatScroll = document.getElementById('chatScroll');
+const chatInput = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+
+function addMsg(role, content, linesRef) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (role === 'assistant') {
+    div.innerHTML = '<div class="who">assistant</div><div class="body"></div>';
+    div.querySelector('.body').textContent = content;
+  } else {
+    div.textContent = content;
+  }
+  if (linesRef && linesRef.length) {
+    const refDiv = document.createElement('div');
+    refDiv.className = 'lines-ref';
+    linesRef.slice(0, 6).forEach(n => {
+      const btn = document.createElement('button');
+      btn.textContent = 'line ' + n;
+      btn.onclick = () => jumpToLine(n, linesRef);
+      refDiv.appendChild(btn);
+    });
+    div.appendChild(refDiv);
+  }
+  chatScroll.appendChild(div);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+  return div;
+}
+
+function addTyping() {
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  div.id = 'typingIndicator';
+  div.innerHTML = '<div class="who">assistant</div><div class="typing"><span></span><span></span><span></span></div>';
+  chatScroll.appendChild(div);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+}
+function removeTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || !activeTraceId) return;
+  chatInput.value = '';
+  addMsg('user', text);
+  chatHistory.push({ role: 'user', content: text });
+  sendBtn.disabled = true;
+  addTyping();
+
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trace_id: activeTraceId, message: text, history: chatHistory,
+        model: document.getElementById('modelSelect').value,
+      }),
+    });
+    const data = await r.json();
+    removeTyping();
+    if (!data.ok) {
+      addMsg('assistant', 'Error: ' + data.error);
+    } else {
+      addMsg('assistant', data.reply, data.highlight_lines);
+      chatHistory.push({ role: 'assistant', content: data.reply });
+      if (data.jump_to_line) jumpToLine(data.jump_to_line, data.highlight_lines);
+    }
+  } catch (e) {
+    removeTyping();
+    addMsg('assistant', 'Error: ' + e);
+  }
+  sendBtn.disabled = false;
+  chatInput.focus();
+}
+
+sendBtn.addEventListener('click', sendMessage);
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+</script>
+</body>
+</html>
